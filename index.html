@@ -73,7 +73,9 @@ tbody tr:hover{background:var(--accent-soft)}
 td input[type=text]{width:100%;border-color:transparent;background:transparent;padding:6px 8px}
 td input[type=text]:hover,td input[type=text]:focus{border-color:var(--line);background:var(--surface)}
 td.banco input{font-weight:600}
-td.status{width:170px} td.data{width:160px} td.acoes{width:96px;text-align:right}
+td.status{width:170px} td.data{width:190px}
+th.n,td.n{width:52px;text-align:right;padding-right:4px}
+td.n span{font-family:var(--mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums} td.acoes{width:96px;text-align:right}
 select.st{font-weight:600;border-radius:999px;padding:5px 10px;width:100%}
 select.st[data-v="pendente"]{color:var(--pend);background:var(--pend-bg);border-color:transparent}
 select.st[data-v="andamento"]{color:var(--and);background:var(--and-bg);border-color:transparent}
@@ -173,7 +175,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
 
   <div class="tablebox">
     <table>
-      <thead><tr><th>Banco</th><th>Convênio</th><th>Situação</th><th>Data</th><th>Prioridade</th><th></th></tr></thead>
+      <thead><tr><th class="n">Nº</th><th>Banco</th><th>Convênio</th><th>Situação</th><th>Data de subida no Storm</th><th>Prioridade</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="empty" id="empty">Carregando tabelas…</div>
@@ -279,7 +281,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     const next = Object.assign({}, cur, patch, {atualizado:new Date().toISOString()});
     docs.set(id, next);
     logHist(cur, next, id); desenharHist();
-    renderCounts(); aplicarFiltro();
+    render();
     if(local || !col) return;
     try { await col.doc(id).set(next); }
     catch(e){ note.textContent = "Não foi possível salvar agora ("+e.code+"). Tente de novo em instantes."; note.className="note warn"; }
@@ -288,6 +290,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
   function criarLinha(id){
     const tr = document.createElement("tr"); tr.dataset.id = id;
     const mk = (cls, el) => { const td=document.createElement("td"); td.className=cls; td.appendChild(el); tr.appendChild(td); return el; };
+    mk("n", document.createElement("span"));
     const iB = mk("banco", Object.assign(document.createElement("input"),{type:"text",id:"b-"+id}));
     iB.setAttribute("aria-label","Banco");
     const iC = mk("conv", Object.assign(document.createElement("input"),{type:"text",id:"c-"+id}));
@@ -296,7 +299,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     STATUS.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; sel.appendChild(o); });
     mk("status", sel);
     const iD = mk("data", Object.assign(document.createElement("input"),{type:"date",id:"d-"+id}));
-    iD.setAttribute("aria-label","Data");
+    iD.setAttribute("aria-label","Data de subida no Storm");
     const iP = document.createElement("select"); iP.className="pr"; iP.id="p-"+id; iP.setAttribute("aria-label","Prioridade");
     [["","— Definir"],["alta","▲ Alta"],["media","● Média"],["baixa","▼ Baixa"]].forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; iP.appendChild(o); });
     mk("prio", iP);
@@ -331,6 +334,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
   function preencher(tr, d){
     const q = c => tr.querySelector("td."+c+" input, td."+c+" select");
     const set = (el, v) => { if(el && document.activeElement!==el && el.value!==v) el.value=v; };
+    tr.querySelector("td.n span").textContent = d.seq || "";
     set(q("banco"), d.banco||""); set(q("conv"), d.convenio||"");
     const sel=q("status"); set(sel, d.status||"pendente"); sel.dataset.v = sel.value;
     set(q("data"), d.data||"");
@@ -339,7 +343,10 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
   }
 
   function ordem(){
+    const rank = p => ({alta:0,media:1,baixa:2})[p] ?? 3;
     return [...docs.entries()].sort((a,b)=>
+      rank(a[1].prioridade) - rank(b[1].prioridade) ||
+      (a[1].seq||1e9) - (b[1].seq||1e9) ||
       (a[1].banco||"").localeCompare(b[1].banco||"","pt-BR",{sensitivity:"base"}) ||
       (a[1].convenio||"").localeCompare(b[1].convenio||"","pt-BR",{sensitivity:"base"}));
   }
@@ -348,14 +355,15 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     for(const [id,tr] of trs){ if(!docs.has(id)){ tr.remove(); trs.delete(id); } }
     const lista = ordem();
     let prev = null;
+    const ae = document.activeElement;
     lista.forEach(([id,d])=>{
       const tr = trs.get(id) || criarLinha(id);
       preencher(tr, d);
       const want = prev ? prev.nextSibling : tbody.firstChild;
-      if(want!==tr && !tr.contains(document.activeElement)) tbody.insertBefore(tr, want);
-      else if(!tr.parentNode) tbody.appendChild(tr);
+      if(want!==tr) tbody.insertBefore(tr, want);
       prev = tr;
     });
+    if(ae && tbody.contains(ae) && document.activeElement!==ae) ae.focus({preventScroll:true});
     renderCounts(); aplicarFiltro(); desenharHist();
   }
 
@@ -407,7 +415,8 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     if(filtro){ filtro=""; document.querySelectorAll(".count").forEach(x=>x.setAttribute("aria-pressed", x.dataset.f===""?"true":"false")); }
     $("busca").value=""; busca="";
     const id = "t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    const d = {banco, convenio, status:"pendente", data:"", prioridade:"", atualizado:new Date().toISOString()};
+    let maxSeq=0; docs.forEach(x=>{ if(x.seq>maxSeq) maxSeq=x.seq; });
+    const d = {seq:maxSeq+1, banco, convenio, status:"pendente", data:"", prioridade:"", atualizado:new Date().toISOString()};
     docs.set(id,d); render();
     $("novoBanco").value=""; $("novoConvenio").value=""; $("novoBanco").focus();
     const nova = trs.get(id); if(nova){ nova.scrollIntoView({block:"center"}); }
@@ -418,8 +427,8 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     const esc=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
     const lab=Object.fromEntries(STATUS);
     const br=s=>s?s.split("-").reverse().join("/"):"";
-    const linhas=[["Banco","Convênio","Situação","Data","Prioridade"].map(esc).join(";")];
-    ordem().forEach(([,d])=>linhas.push([d.banco,d.convenio,lab[d.status||"pendente"],br(d.data),({alta:"Alta",media:"Média",baixa:"Baixa"})[d.prioridade]||""].map(esc).join(";")));
+    const linhas=[["Nº","Banco","Convênio","Situação","Data de subida no Storm","Prioridade"].map(esc).join(";")];
+    ordem().forEach(([,d])=>linhas.push([d.seq||"",d.banco,d.convenio,lab[d.status||"pendente"],br(d.data),({alta:"Alta",media:"Média",baixa:"Baixa"})[d.prioridade]||""].map(esc).join(";")));
     return "﻿"+linhas.join("\r\n");
   }
 
@@ -433,10 +442,16 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     ["fox-inss","Fox Digital","INSS"],["happy-inss","Happy","INSS"],["happy-clt","Happy","CLT"],["icred-inss","iCred","INSS"],
     ["pan-b2b","PAN","B2B"],["quali-inss","Qualibank","INSS"],["sabemi-aer","Sabemi","Aeronáutica"],["sabemi-exe","Sabemi","Exército"],
     ["sabemi-mar","Sabemi","Marinha"],["sabemi-siape","Sabemi","Federal/SIAPE"],["daycoval-pref","Daycoval","Prefeituras"]];
+  function numerar(){
+    let max=0, mudou=false; Object.values(store.tabelas).forEach(t=>{ if(t.seq>max) max=t.seq; });
+    Object.values(store.tabelas).forEach(t=>{ if(!t.seq){ t.seq=++max; mudou=true; } });
+    if(mudou) persist();
+  }
   function carregar(){
     let raw=null; try{ raw=localStorage.getItem(KEY); }catch(e){}
     if(raw){ try{ const j=JSON.parse(raw); store={tabelas:j.tabelas||{},historico:j.historico||{}}; }catch(e){} }
-    else { SEED.forEach(([id,b,c])=>store.tabelas[id]={banco:b,convenio:c,status:"pendente",data:"",prioridade:""}); persist(); }
+    else { SEED.forEach(([id,b,c],k)=>store.tabelas[id]={seq:k+1,banco:b,convenio:c,status:"pendente",data:"",prioridade:""}); persist(); }
+    numerar();
     docs=new Map(Object.entries(store.tabelas)); hist=new Map(Object.entries(store.historico));
   }
   function baixar(nome, conteudo, tipo){
@@ -455,7 +470,7 @@ tr[data-pr="alta"]:not([data-st="finalizado"]) td:first-child{box-shadow:inset 3
     $("bkpFile").addEventListener("change",async e=>{
       const f=e.target.files[0]; if(!f) return;
       try{ const j=JSON.parse(await f.text()); if(!j.tabelas) throw 0;
-        store={tabelas:j.tabelas,historico:j.historico||{}}; persist();
+        store={tabelas:j.tabelas,historico:j.historico||{}}; numerar(); persist();
         docs=new Map(Object.entries(store.tabelas)); hist=new Map(Object.entries(store.historico)); render();
         note.textContent="Backup restaurado."; note.className="note"; }
       catch(err){ note.textContent="Esse arquivo não é um backup do painel."; note.className="note warn"; }
